@@ -130,6 +130,60 @@ module DiscourseDisteleplus
       render json: success_json
     end
 
+    QUOTE_EXCERPT_LENGTH = 300
+
+    # Mod action on a forum post: send it into the conversation as canonical
+    # [quote] markup — PrettyText cooks it into a full quote box here, and
+    # the bridge relays it to Telegram like any other message.
+    def quote
+      raise Discourse::InvalidAccess unless current_user.staff?
+      rate_limit!("quote", 10, 1.minute)
+
+      post = Post.find_by(id: params[:post_id])
+      raise Discourse::NotFound unless post
+      guardian.ensure_can_see!(post)
+
+      excerpt = post.raw.to_s.strip
+      excerpt = "#{excerpt[0, QUOTE_EXCERPT_LENGTH].rstrip}…" if
+        excerpt.length > QUOTE_EXCERPT_LENGTH
+      raw = <<~MARKDOWN.strip
+        [quote="#{post.user&.username}, post:#{post.post_number}, topic:#{post.topic_id}"]
+        #{excerpt}
+        [/quote]
+      MARKDOWN
+
+      message = service.create!(raw: raw)
+      render_json_dump({ message_id: message.id })
+    rescue MessageService::Error, ActiveRecord::RecordInvalid => e
+      render_error(e)
+    end
+
+    # Read cursors of everyone else in the conversation — powers "Seen by".
+    def read_states
+      raise Discourse::NotFound unless SiteSetting.disteleplus_read_receipts_enabled
+      rate_limit!("read-states", 30, 1.minute)
+
+      states =
+        UserState
+          .where.not(user_id: current_user.id)
+          .where.not(last_read_message_id: nil)
+          .includes(:user)
+          .order(last_read_message_id: :desc)
+          .limit(100)
+          .filter_map do |state|
+            user = state.user
+            next if user.nil? || !Access.allowed?(user)
+            {
+              user_id: user.id,
+              username: user.username,
+              name: user.name,
+              avatar_template: user.avatar_template,
+              last_read_message_id: state.last_read_message_id,
+            }
+          end
+      render_json_dump({ read_states: states })
+    end
+
     def read
       rate_limit!("read", 120, 1.minute)
       state = service.mark_read!(params.require(:message_id))
@@ -207,6 +261,7 @@ module DiscourseDisteleplus
         message_bus_channel: Publisher::CHANNEL,
         can_upload: true,
         voice_notes_enabled: SiteSetting.disteleplus_voice_notes_enabled,
+        read_receipts_enabled: SiteSetting.disteleplus_read_receipts_enabled,
       }
     end
 
