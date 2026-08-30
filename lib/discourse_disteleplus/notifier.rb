@@ -47,6 +47,9 @@ module DiscourseDisteleplus
         enqueue_push(recipient, message, notification)
       end
     rescue StandardError => e
+      # Swallowing here hid a real bug for weeks; in tests the failure must
+      # be loud so the suite pinpoints it instead of asserting on absence.
+      raise if Rails.env.test?
       Rails.logger.warn(
         "#{DiscourseDisteleplus::LOG_TAG} notification fan-out failed: #{e.message}",
       )
@@ -110,9 +113,7 @@ module DiscourseDisteleplus
     end
 
     def self.excerpt(message)
-      if message.raw.blank?
-        return I18n.t("disteleplus.upload_only", default: "Sent an attachment")
-      end
+      return I18n.t("disteleplus.upload_only", default: "Sent an attachment") if message.raw.blank?
 
       Post.excerpt(
         message.cooked,

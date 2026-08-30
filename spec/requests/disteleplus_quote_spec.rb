@@ -18,9 +18,9 @@ RSpec.describe "Disteleplus quote in chat" do
 
   it "creates a conversation message carrying the [quote] wrapper" do
     sign_in(admin)
-    expect {
-      post "/jtech-disteleplus/quote.json", params: { post_id: quoted.id }
-    }.to change { DiscourseDisteleplus::Message.count }.by(1)
+    expect { post "/jtech-disteleplus/quote.json", params: { post_id: quoted.id } }.to change {
+      DiscourseDisteleplus::Message.count
+    }.by(1)
     expect(response.status).to eq(200)
 
     message = DiscourseDisteleplus::Message.last
