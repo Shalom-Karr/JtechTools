@@ -78,6 +78,7 @@ export default class DisteleplusConversation extends Component {
     this.unsubscribe?.();
     document.removeEventListener("click", this.closeContextMenu);
     document.removeEventListener("keydown", this.onDocumentKeydown);
+    window.removeEventListener("hashchange", this.onHashChange);
     this.disteleplus.setViewing(false);
   }
 
@@ -190,6 +191,7 @@ export default class DisteleplusConversation extends Component {
     this.unsubscribe = this.disteleplus.onNewMessage(this.onNewMessage);
     document.addEventListener("click", this.closeContextMenu);
     document.addEventListener("keydown", this.onDocumentKeydown);
+    window.addEventListener("hashchange", this.onHashChange);
     requestAnimationFrame(() => {
       this.openAtStart();
       this.enhance(element);
@@ -201,12 +203,16 @@ export default class DisteleplusConversation extends Component {
   openAtStart() {
     const match = window.location.hash.match(/^#m(\d+)$/);
     if (match) {
-      const target = this.messageElement(Number(match[1]));
+      const id = Number(match[1]);
+      const target = this.messageElement(id);
       if (target) {
         this.highlight(target);
         this.showJump = !this.nearBottom;
         return;
       }
+      // Linked message is older than the initial window — load around it.
+      this.jumpToId(id).catch(() => this.scrollToBottom());
+      return;
     }
     const divider = this.timeline?.querySelector(
       ".disteleplus-separator.is-unread"
@@ -217,6 +223,16 @@ export default class DisteleplusConversation extends Component {
       return;
     }
     this.scrollToBottom();
+  }
+
+  // A notification click while the conversation is already open only changes
+  // the hash — no re-render, so follow it by hand.
+  @action
+  onHashChange() {
+    const match = window.location.hash.match(/^#m(\d+)$/);
+    if (match) {
+      this.jumpToId(Number(match[1])).catch(popupAjaxError);
+    }
   }
 
   enhance(root) {
@@ -306,18 +322,11 @@ export default class DisteleplusConversation extends Component {
   @action
   async openResult(result) {
     this.disteleplus.toggleSearch(false);
-    if (!this.messageElement(result.id)) {
-      try {
-        await this.disteleplus.loadAround(result.id);
-      } catch (error) {
-        popupAjaxError(error);
-        return;
-      }
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      this.enhance(this.timeline);
+    try {
+      await this.jumpToId(result.id);
+    } catch (error) {
+      popupAjaxError(error);
     }
-    this.jumpTo(result);
-    this.showJump = true;
   }
 
   autosize(textarea) {
@@ -777,6 +786,25 @@ export default class DisteleplusConversation extends Component {
     const target = this.messageElement(message.id);
     if (target) {
       this.highlight(target);
+    } else {
+      // Target outside the loaded window (old reply, deep link) — fetch a
+      // window around it instead of silently doing nothing.
+      this.jumpToId(message.id).catch(popupAjaxError);
+    }
+  }
+
+  // Jump to any message id, loading a window around it when it is not in
+  // the current timeline. Shared by deep links, reply previews and search.
+  async jumpToId(id) {
+    if (!this.messageElement(id)) {
+      await this.disteleplus.loadAround(id);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      this.enhance(this.timeline);
+    }
+    const target = this.messageElement(id);
+    if (target) {
+      this.highlight(target);
+      this.showJump = true;
     }
   }
 
@@ -1000,10 +1028,8 @@ export default class DisteleplusConversation extends Component {
                         <strong>{{this.sender message.reply_to}}</strong>
                         {{#if message.reply_to.deleted}}
                           <span>{{i18n "disteleplus.deleted"}}</span>
-                        {{else if message.reply_to.cooked}}
-                          <span>{{this.safeCooked
-                              message.reply_to.cooked
-                            }}</span>
+                        {{else if message.reply_to.excerpt}}
+                          <span>{{message.reply_to.excerpt}}</span>
                         {{else if message.reply_to.attachment_name}}
                           <span>{{icon "paperclip"}}
                             {{message.reply_to.attachment_name}}</span>
