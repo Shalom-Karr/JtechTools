@@ -18,11 +18,14 @@ module DiscourseDisteleplus
       preview = excerpt(message)
       sender = display_name(message)
       recipients.find_each do |recipient|
+        # NB: never put message.id into post_number — that column is int4
+        # and disteleplus message ids are bigint (test ids overflow it, and
+        # the resulting RangeError silently killed the whole fan-out). The
+        # id lives in data.disteleplus_message_id instead.
         notification =
           Notification.create!(
             notification_type: Notification.types[:custom],
             user_id: recipient.id,
-            post_number: message.id,
             high_priority: true,
             data: {
               message:
@@ -79,11 +82,22 @@ module DiscourseDisteleplus
 
     def self.mark_read(user, through_id)
       marker = '%"disteleplus":true%'
-      Notification
-        .where(user_id: user.id, notification_type: Notification.types[:custom], read: false)
-        .where("post_number <= ?", through_id.to_i)
-        .where("data LIKE ?", marker)
-        .update_all(read: true)
+      candidates =
+        Notification
+          .where(user_id: user.id, notification_type: Notification.types[:custom], read: false)
+          .where("data LIKE ?", marker)
+          .pluck(:id, :data)
+      ids =
+        candidates.filter_map do |id, data|
+          parsed =
+            begin
+              JSON.parse(data)
+            rescue JSON::ParserError
+              {}
+            end
+          id if parsed["disteleplus_message_id"].to_i <= through_id.to_i
+        end
+      Notification.where(id: ids).update_all(read: true) if ids.any?
       user.publish_notifications_state
     end
 

@@ -125,8 +125,15 @@ RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
     end
 
     it "is enqueued from post_created for eligible posts" do
+      # Fabricate(:post) writes the row directly and never fires
+      # :post_created — only PostCreator emits the event the hook listens to.
       expect_enqueued_with(job: :disteleplus_notify_forum_post) do
-        Fabricate(:post, topic: Fabricate(:topic, category: category), user: author)
+        PostCreator.create!(
+          author,
+          title: "A fresh eligible topic",
+          raw: "body long enough to pass validation",
+          category: category.id,
+        )
       end
     end
   end
@@ -145,6 +152,20 @@ RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
   end
 
   describe ProblemCheck::DisteleplusTelegram do
+    before do
+      # The plugin-spec harness has been observed dropping plugin server
+      # locale keys (raise_on_missing_translations then aborts the check);
+      # pin the key so this example tests the check, not locale loading.
+      I18n.backend.store_translations(
+        :en,
+        dashboard: {
+          problem: {
+            disteleplus_telegram: "Telegram delivery failed (%{at}): %{description} — %{hint}",
+          },
+        },
+      )
+    end
+
     it "reports a problem only while a recent error exists" do
       expect(described_class.new.call).to be_empty
       DiscourseDisteleplus::Health.record_error("Bad Request: chat not found")
