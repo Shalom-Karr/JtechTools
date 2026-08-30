@@ -140,7 +140,7 @@ RSpec.describe DiscourseDisteleplus::SetupCommandHandler do
             "Native conversation: /disteleplus",
             "Telegram conversation: General",
             "Notifications: on — 3/3 native members at always, push on",
-            "Voice notes: on — native conversation",
+            "Voice notes: on — bridge channel",
           ),
       ),
     )

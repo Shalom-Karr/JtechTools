@@ -16,6 +16,7 @@ module DiscourseDisteleplus
       recipients =
         Access.allowed_users.where(id: mentioned_ids).where.not(id: [actor&.id, bot_id].compact)
       preview = excerpt(message)
+      sender = display_name(message)
       recipients.find_each do |recipient|
         notification =
           Notification.create!(
@@ -27,10 +28,11 @@ module DiscourseDisteleplus
               message:
                 I18n.t(
                   "disteleplus.notification_with_preview",
-                  username: display_name(message),
+                  username: sender,
                   excerpt: preview,
+                  default: "#{sender} mentioned you: #{preview}",
                 ),
-              title: I18n.t("disteleplus.title"),
+              title: I18n.t("disteleplus.title", default: "Disteleplus"),
               # Deep link: the conversation scrolls to and highlights #m<id>.
               url: "#{PATH}#m#{message.id}",
               username: actor&.username,
@@ -93,7 +95,7 @@ module DiscourseDisteleplus
         {
           notification_type: notification.notification_type,
           post_number: message.id,
-          topic_title: I18n.t("disteleplus.title"),
+          topic_title: I18n.t("disteleplus.title", default: "Disteleplus"),
           excerpt: excerpt(message),
           username: display_name(message),
           post_url: "#{PATH}#m#{message.id}",
@@ -108,7 +110,9 @@ module DiscourseDisteleplus
     end
 
     def self.excerpt(message)
-      return I18n.t("disteleplus.upload_only") if message.raw.blank?
+      if message.raw.blank?
+        return I18n.t("disteleplus.upload_only", default: "Sent an attachment")
+      end
 
       Post.excerpt(
         message.cooked,

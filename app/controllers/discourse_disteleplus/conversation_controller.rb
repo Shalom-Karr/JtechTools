@@ -144,8 +144,9 @@ module DiscourseDisteleplus
       guardian.ensure_can_see!(post)
 
       excerpt = post.raw.to_s.strip
-      excerpt = "#{excerpt[0, QUOTE_EXCERPT_LENGTH].rstrip}…" if
-        excerpt.length > QUOTE_EXCERPT_LENGTH
+      if excerpt.length > QUOTE_EXCERPT_LENGTH
+        excerpt = "#{excerpt[0, QUOTE_EXCERPT_LENGTH].rstrip}…"
+      end
       raw = <<~MARKDOWN.strip
         [quote="#{post.user&.username}, post:#{post.post_number}, topic:#{post.topic_id}"]
         #{excerpt}

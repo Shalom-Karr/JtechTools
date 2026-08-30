@@ -51,7 +51,7 @@ RSpec.describe "Disteleplus quote in chat" do
     moderator = Fabricate(:moderator)
     sign_in(moderator)
     post "/jtech-disteleplus/quote.json", params: { post_id: hidden.id }
-    expect(response.status).to eq(404).or eq(403)
+    expect(response.status).to eq(404).or(eq(403))
   end
 
   it "404s when the module is disabled" do

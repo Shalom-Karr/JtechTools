@@ -43,7 +43,13 @@ RSpec.describe DiscourseDisteleplus::Access do
   describe ".allowed_users" do
     it "lists admins plus allowed-group members, excluding staged accounts" do
       Fabricate(:user, staged: true, trust_level: TrustLevel[1])
-      expect(described_class.allowed_users.pluck(:id)).to contain_exactly(admin.id, member.id)
+      # The moderator sits in the trust_level_1 auto group too — group
+      # membership, not rank, is what admits non-admins.
+      expect(described_class.allowed_users.pluck(:id)).to contain_exactly(
+        admin.id,
+        member.id,
+        moderator.id,
+      )
     end
   end
 
@@ -84,6 +90,9 @@ RSpec.describe DiscourseDisteleplus::Access do
     SiteSetting.disteleplus_allowed_groups = Group::AUTO_GROUPS[:staff].to_s
     expect(Guardian.new(moderator).can_moderate_disteleplus?).to eq(true)
 
+    # Restore the TL1 audience — the member must still be allowed when
+    # serialized, and the assertion above narrowed the groups to staff.
+    SiteSetting.disteleplus_allowed_groups = Group::AUTO_GROUPS[:trust_level_1].to_s
     json = CurrentUserSerializer.new(member, scope: Guardian.new(member), root: false).as_json
     expect(json[:can_access_disteleplus]).to eq(true)
   end

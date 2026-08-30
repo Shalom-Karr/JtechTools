@@ -27,12 +27,8 @@ module DiscourseDisteleplus
     # is plenty for a receipt chip.
     def self.publish_read_state(user, last_read_message_id)
       return unless SiteSetting.disteleplus_read_receipts_enabled
-      return unless Discourse.redis.set(
-        "disteleplus:read-pub:#{user.id}",
-        "1",
-        ex: 3,
-        nx: true,
-      )
+      throttle_key = "disteleplus:read-pub:#{user.id}"
+      return unless Discourse.redis.set(throttle_key, "1", ex: 3, nx: true)
 
       user_ids =
         Access
