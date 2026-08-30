@@ -8,7 +8,9 @@ require "rails_helper"
 RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
   fab!(:category)
   fab!(:secret_category) { Fabricate(:private_category, group: Fabricate(:group)) }
-  fab!(:author) { Fabricate(:user, username: "poster", name: "Poster Person") }
+  fab!(:author) do
+    Fabricate(:user, username: "poster", name: "Poster Person", refresh_auto_groups: true)
+  end
   fab!(:topic) { Fabricate(:topic, category: category, title: "Deploy window & <plans>") }
   fab!(:post) { Fabricate(:post, topic: topic, user: author, raw: "We deploy at **14:00** today.") }
 
@@ -153,16 +155,14 @@ RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
 
   describe ProblemCheck::DisteleplusTelegram do
     before do
-      # The plugin-spec harness has been observed dropping plugin server
-      # locale keys (raise_on_missing_translations then aborts the check);
-      # pin the key so this example tests the check, not locale loading.
-      I18n.backend.store_translations(
+      # The plugin-spec harness drops this plugin server-locale key, and
+      # store_translations is bypassed by the translate accelerator's cache.
+      # A TranslationOverride is the one path the accelerator consults, so
+      # this example tests the check rather than harness locale loading.
+      TranslationOverride.upsert!(
         :en,
-        dashboard: {
-          problem: {
-            disteleplus_telegram: "Telegram delivery failed (%{at}): %{description} — %{hint}",
-          },
-        },
+        "dashboard.problem.disteleplus_telegram",
+        "Telegram delivery failed (%{at}): %{description} — %{hint}",
       )
     end
 

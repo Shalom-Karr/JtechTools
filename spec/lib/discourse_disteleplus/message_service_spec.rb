@@ -221,6 +221,9 @@ RSpec.describe DiscourseDisteleplus::MessageService do
     end
 
     it "queues web push only for mentioned, subscribed recipients" do
+      # Core delays pushes to recently-active users via enqueue_in, which the
+      # immediate-queue assertion cannot see — force immediate delivery.
+      SiteSetting.push_notification_time_window_mins = 0
       PushSubscription.create!(user: other, data: { endpoint: "https://push.example/x" }.to_json)
       expect { service.create!(raw: "no mention here") }.not_to change {
         Jobs::SendPushNotification.jobs.size

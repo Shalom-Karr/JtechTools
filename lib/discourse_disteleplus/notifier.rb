@@ -119,6 +119,7 @@ module DiscourseDisteleplus
         },
       )
     rescue StandardError => e
+      raise if Rails.env.test?
       Rails.logger.warn("#{DiscourseDisteleplus::LOG_TAG} push enqueue failed: #{e.message}")
     end
 
