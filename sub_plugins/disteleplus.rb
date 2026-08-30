@@ -227,7 +227,7 @@ after_initialize do
 
   on(:post_created) do |post, *_args|
     next unless DiscourseDisteleplus::ForumPostNotifier.eligible?(post)
-    Jobs.enqueue(:disteleplus_notify_forum_post, post_id: post.id)
+    Jobs.enqueue_in(10.seconds, :disteleplus_notify_forum_post, post_id: post.id)
   rescue StandardError => e
     Rails.logger.warn(
       "#{DiscourseDisteleplus::LOG_TAG} forum post notify hook failed: #{e.message}",

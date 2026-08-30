@@ -171,16 +171,15 @@ module DiscourseDisteleplus
 
     def self.status_summary
       return "off" unless SiteSetting.disteleplus_voice_notes_enabled
-      scope =
+      bubbles =
         (
-          if SiteSetting.disteleplus_voice_notes_bridge_channel_only
-            "bridge channel"
+          if ffmpeg_available?
+            "Telegram voice bubbles for every browser"
           else
-            "all channels"
+            "no ffmpeg — WebM notes arrive as audio files"
           end
         )
-      bubbles = ffmpeg_available? ? "Telegram voice bubbles for every browser" : "no ffmpeg"
-      "on — #{scope}, up to #{SiteSetting.disteleplus_voice_note_max_seconds}s, #{bubbles}"
+      "on — native conversation, up to #{SiteSetting.disteleplus_voice_note_max_seconds}s, #{bubbles}"
     end
   end
 end

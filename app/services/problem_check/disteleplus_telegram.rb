@@ -6,12 +6,10 @@ class ProblemCheck::DisteleplusTelegram < ProblemCheck
   self.priority = "low"
 
   def call
-    # Explicit [] — core's no_problem returns nil on current Discourse, which
-    # breaks callers expecting an enumerable of problems.
-    return [] unless SiteSetting.disteleplus_enabled
+    return no_problem unless SiteSetting.disteleplus_enabled
 
     error = DiscourseDisteleplus::Health.last_error
-    return [] if error.nil?
+    return no_problem if error.nil?
 
     # override_data is what core interpolates into the message; details only
     # travel with the notice.
