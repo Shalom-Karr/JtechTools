@@ -150,9 +150,7 @@ RSpec.describe "Disteleplus conversation API" do
 
     it "rate limits" do
       RateLimiter.enable
-      # RateLimiter.clear_all! no longer exists on current core; limiter
-      # state lives in redis, so start the burst from a clean slate.
-      Discourse.redis.flushdb
+      RateLimiter.clear_all_global!
       30.times { post "#{base}/messages.json", params: { raw: "spam" } }
       expect(response.status).to eq(201)
       post "#{base}/messages.json", params: { raw: "spam" }

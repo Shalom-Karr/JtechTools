@@ -6,12 +6,13 @@ RSpec.describe DiscourseDisteleplus::Access do
   fab!(:admin)
   fab!(:moderator)
   fab!(:member) { Fabricate(:user, trust_level: TrustLevel[1]) }
-  fab!(:outsider) { Fabricate(:user, trust_level: TrustLevel[0]) }
+  fab!(:outsider) { Fabricate(:user, trust_level: TrustLevel[1]) }
+  fab!(:team) { Fabricate(:group).tap { |g| g.add(member) } }
 
   before do
     SiteSetting.jtech_enabled = true
     SiteSetting.disteleplus_enabled = true
-    SiteSetting.disteleplus_allowed_groups = Group::AUTO_GROUPS[:trust_level_1].to_s
+    SiteSetting.disteleplus_allowed_groups = team.id.to_s
   end
 
   describe ".allowed?" do
@@ -42,14 +43,8 @@ RSpec.describe DiscourseDisteleplus::Access do
 
   describe ".allowed_users" do
     it "lists admins plus allowed-group members, excluding staged accounts" do
-      Fabricate(:user, staged: true, trust_level: TrustLevel[1])
-      # The moderator sits in the trust_level_1 auto group too — group
-      # membership, not rank, is what admits non-admins.
-      expect(described_class.allowed_users.pluck(:id)).to contain_exactly(
-        admin.id,
-        member.id,
-        moderator.id,
-      )
+      team.add(Fabricate(:user, staged: true))
+      expect(described_class.allowed_users.pluck(:id)).to contain_exactly(admin.id, member.id)
     end
   end
 
@@ -87,12 +82,9 @@ RSpec.describe DiscourseDisteleplus::Access do
     expect(Guardian.new(member).can_access_disteleplus?).to eq(true)
     expect(Guardian.new(outsider).can_access_disteleplus?).to eq(false)
     expect(Guardian.new(moderator).can_moderate_disteleplus?).to eq(false)
-    SiteSetting.disteleplus_allowed_groups = Group::AUTO_GROUPS[:staff].to_s
-    expect(Guardian.new(moderator).can_moderate_disteleplus?).to eq(true)
+    team.add(moderator)
+    expect(Guardian.new(moderator.reload).can_moderate_disteleplus?).to eq(true)
 
-    # Restore the TL1 audience — the member must still be allowed when
-    # serialized, and the assertion above narrowed the groups to staff.
-    SiteSetting.disteleplus_allowed_groups = Group::AUTO_GROUPS[:trust_level_1].to_s
     json = CurrentUserSerializer.new(member, scope: Guardian.new(member), root: false).as_json
     expect(json[:can_access_disteleplus]).to eq(true)
   end

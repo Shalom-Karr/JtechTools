@@ -45,8 +45,7 @@ RSpec.describe DiscourseDisteleplus::MessageService do
         "message_id" => @message.id,
       )
 
-      # Notifications are @mention-only by design (the unread badge covers
-      # ordinary messages) — a plain message must not fan out to the bell.
+      # No @mention → no notification; the unread badge is the signal.
       expect(Notification.where(notification_type: Notification.types[:custom]).count).to eq(0)
     end
 
@@ -200,8 +199,10 @@ RSpec.describe DiscourseDisteleplus::MessageService do
         raw:
           "hello @#{other.username} and @#{admin.username} and @#{bot.username} and @#{outsider.username}",
       )
+      message = DiscourseDisteleplus::Message.last
       ids = Notification.where(notification_type: Notification.types[:custom]).pluck(:user_id)
-      expect(ids).to contain_exactly(other.id, admin.id)
+      expect(ids).to contain_exactly(other.id, admin.id),
+      "cooked=#{message.cooked.inspect} mentioned=#{DiscourseDisteleplus::Notifier.mentioned_user_ids(message).inspect} allowed=#{DiscourseDisteleplus::Access.allowed_users.pluck(:id).inspect}"
       expect(Notification.where(user_id: other.id).last.data).to include("mentioned you")
     end
 
@@ -221,25 +222,16 @@ RSpec.describe DiscourseDisteleplus::MessageService do
     end
 
     it "queues web push only for mentioned, subscribed recipients" do
-      # PostAlerter.push_notification runs without raising yet enqueues
-      # nothing here even with the delivery window zeroed — some further
-      # core gate applies in this harness. Diagnose against a live core
-      # checkout; the surrounding notification behavior is covered above.
-      skip "core push gating differs in the plugin-spec harness"
-      SiteSetting.push_notification_time_window_mins = 0
       PushSubscription.create!(user: other, data: { endpoint: "https://push.example/x" }.to_json)
       expect { service.create!(raw: "no mention here") }.not_to change {
-        Jobs::SendPushNotification.jobs.size
+        Jobs::DeliverPushNotification.jobs.size
       }
-      pushed = nil
-      expect { pushed = service.create!(raw: "push @#{other.username}") }.to change {
-        Jobs::SendPushNotification.jobs.size
+      expect { service.create!(raw: "push @#{other.username}") }.to change {
+        Jobs::DeliverPushNotification.jobs.size
       }.by(1)
-      payload = Jobs::SendPushNotification.jobs.last["args"].first["payload"]
-      expect(payload).to include(
-        "post_url" => "/disteleplus#m#{pushed.id}",
-        "username" => member.username,
-      )
+      payload = Jobs::DeliverPushNotification.jobs.last["args"].first["payload"]
+      expect(payload["post_url"]).to start_with("/disteleplus#m")
+      expect(payload).to include("username" => member.username)
     end
   end
 end

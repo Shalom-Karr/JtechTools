@@ -8,9 +8,7 @@ require "rails_helper"
 RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
   fab!(:category)
   fab!(:secret_category) { Fabricate(:private_category, group: Fabricate(:group)) }
-  fab!(:author) do
-    Fabricate(:user, username: "poster", name: "Poster Person", refresh_auto_groups: true)
-  end
+  fab!(:author) { Fabricate(:user, username: "poster", name: "Poster Person") }
   fab!(:topic) { Fabricate(:topic, category: category, title: "Deploy window & <plans>") }
   fab!(:post) { Fabricate(:post, topic: topic, user: author, raw: "We deploy at **14:00** today.") }
 
@@ -127,15 +125,9 @@ RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
     end
 
     it "is enqueued from post_created for eligible posts" do
-      # Fabricate(:post) writes the row directly and never fires
-      # :post_created — only PostCreator emits the event the hook listens to.
-      expect_enqueued_with(job: :disteleplus_notify_forum_post) do
-        PostCreator.create!(
-          author,
-          title: "A fresh eligible topic",
-          raw: "body long enough to pass validation",
-          category: category.id,
-        )
+      fresh = Fabricate(:post, topic: Fabricate(:topic, category: category), user: author)
+      expect_enqueued_with(job: :disteleplus_notify_forum_post, args: { post_id: fresh.id }) do
+        DiscourseEvent.trigger(:post_created, fresh, {}, author)
       end
     end
   end
@@ -154,27 +146,10 @@ RSpec.describe DiscourseDisteleplus::ForumPostNotifier do
   end
 
   describe ProblemCheck::DisteleplusTelegram do
-    before do
-      # The plugin-spec harness drops this plugin server-locale key, and
-      # store_translations is bypassed by the translate accelerator's cache.
-      # A TranslationOverride is the one path the accelerator consults, so
-      # this example tests the check rather than harness locale loading.
-      TranslationOverride.upsert!(
-        :en,
-        "dashboard.problem.disteleplus_telegram",
-        "Telegram delivery failed (%{at}): %{description} — %{hint}",
-      )
-    end
-
     it "reports a problem only while a recent error exists" do
-      # The failing stack runs through I18n.translate_no_override: the
-      # harness disables translation overrides AND drops this plugin server
-      # key, so neither the locale file nor TranslationOverride can satisfy
-      # raise_on_missing_translations here. Needs a live-checkout diagnosis.
-      skip "plugin server-locale key unavailable in the plugin-spec harness"
-      expect(described_class.new.call).to be_empty
+      expect(described_class.new.call).to be_blank
       DiscourseDisteleplus::Health.record_error("Bad Request: chat not found")
-      problems = described_class.new.call
+      problems = Array(described_class.new.call)
       expect(problems.length).to eq(1)
       expect(problems.first.details[:hint]).to include("chat id")
     end

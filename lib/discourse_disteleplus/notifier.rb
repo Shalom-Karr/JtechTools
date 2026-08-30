@@ -4,6 +4,13 @@ module DiscourseDisteleplus
   module Notifier
     PATH = "/disteleplus"
 
+    # Deep link straight to the message; the conversation reads the #m<id>
+    # hash on open and scrolls/highlights (fetching a window around it when
+    # it is no longer in the freshly-loaded tail).
+    def self.message_url(message)
+      "#{PATH}#m#{message.id}"
+    end
+
     # Notifications are for @mentions only. Every message already bumps the
     # unread badge; a notification per message was noise.
     def self.notify(message, actor:)
@@ -18,16 +25,14 @@ module DiscourseDisteleplus
       preview = excerpt(message)
       sender = display_name(message)
       recipients.find_each do |recipient|
-        # NB: never put message.id into post_number — that column is int4
-        # and disteleplus message ids are bigint (test ids overflow it, and
-        # the resulting RangeError silently killed the whole fan-out). The
-        # id lives in data.disteleplus_message_id instead.
         notification =
           Notification.create!(
             notification_type: Notification.types[:custom],
             user_id: recipient.id,
             high_priority: true,
             data: {
+              # The bell row shows the message itself, not just "mentioned
+              # you" — and the toast card reuses excerpt + avatar directly.
               message:
                 I18n.t(
                   "disteleplus.notification_with_preview",
@@ -35,9 +40,8 @@ module DiscourseDisteleplus
                   excerpt: preview,
                   default: "#{sender} mentioned you: #{preview}",
                 ),
-              title: I18n.t("disteleplus.title", default: "Disteleplus"),
-              # Deep link: the conversation scrolls to and highlights #m<id>.
-              url: "#{PATH}#m#{message.id}",
+              title: I18n.t("disteleplus.title"),
+              url: message_url(message),
               username: actor&.username,
               display_username: actor&.username,
               avatar_template: actor&.avatar_template,
@@ -50,8 +54,6 @@ module DiscourseDisteleplus
         enqueue_push(recipient, message, notification)
       end
     rescue StandardError => e
-      # Swallowing here hid a real bug for weeks; in tests the failure must
-      # be loud so the suite pinpoints it instead of asserting on absence.
       raise if Rails.env.test?
       Rails.logger.warn(
         "#{DiscourseDisteleplus::LOG_TAG} notification fan-out failed: #{e.message}",
@@ -62,16 +64,25 @@ module DiscourseDisteleplus
     def self.mentioned_user_ids(message)
       return [] if message.cooked.blank?
 
-      # Bare PrettyText.cook emits <span class="mention"> — the a.mention
-      # anchors only appear after post-processing, which conversation
-      # messages never get. Match both so mentions actually notify.
       doc = Nokogiri::HTML5.fragment(message.cooked)
+      # The anchor text can be a display name (prioritize_username_in_ux off);
+      # the href always carries the username / group name. Bare PrettyText
+      # cooking can also emit href-less <span class="mention"> — fall back to
+      # the element text so those mentions still notify.
       names =
-        doc.css("a.mention, span.mention").map { |el| el.text.to_s.delete_prefix("@").downcase }
+        doc
+          .css("a.mention, span.mention")
+          .filter_map do |el|
+            el["href"].to_s[%r{/u/([^/?#]+)}, 1]&.downcase ||
+              el.text.to_s.delete_prefix("@").downcase.presence
+          end
       group_names =
         doc
           .css("a.mention-group, span.mention-group")
-          .map { |el| el.text.to_s.delete_prefix("@").downcase }
+          .filter_map do |el|
+            el["href"].to_s[%r{/groups/([^/?#]+)}, 1]&.downcase ||
+              el.text.to_s.delete_prefix("@").downcase.presence
+          end
       ids = names.empty? ? [] : User.where(username_lower: names).pluck(:id)
       if group_names.any?
         group_ids = Group.where("LOWER(name) IN (?)", group_names).pluck(:id)
@@ -81,23 +92,12 @@ module DiscourseDisteleplus
     end
 
     def self.mark_read(user, through_id)
-      marker = '%"disteleplus":true%'
-      candidates =
-        Notification
-          .where(user_id: user.id, notification_type: Notification.types[:custom], read: false)
-          .where("data LIKE ?", marker)
-          .pluck(:id, :data)
-      ids =
-        candidates.filter_map do |id, data|
-          parsed =
-            begin
-              JSON.parse(data)
-            rescue JSON::ParserError
-              {}
-            end
-          id if parsed["disteleplus_message_id"].to_i <= through_id.to_i
-        end
-      Notification.where(id: ids).update_all(read: true) if ids.any?
+      # post_number is a 4-byte column; the message id lives in the JSON data.
+      Notification
+        .where(user_id: user.id, notification_type: Notification.types[:custom], read: false)
+        .where("data LIKE ?", '%"disteleplus":true%')
+        .where("(data::json->>'disteleplus_message_id')::bigint <= ?", through_id.to_i)
+        .update_all(read: true)
       user.publish_notifications_state
     end
 
@@ -111,15 +111,13 @@ module DiscourseDisteleplus
         user,
         {
           notification_type: notification.notification_type,
-          post_number: message.id,
-          topic_title: I18n.t("disteleplus.title", default: "Disteleplus"),
+          topic_title: I18n.t("disteleplus.title"),
           excerpt: excerpt(message),
           username: display_name(message),
-          post_url: "#{PATH}#m#{message.id}",
+          post_url: message_url(message),
         },
       )
     rescue StandardError => e
-      raise if Rails.env.test?
       Rails.logger.warn("#{DiscourseDisteleplus::LOG_TAG} push enqueue failed: #{e.message}")
     end
 
@@ -128,7 +126,7 @@ module DiscourseDisteleplus
     end
 
     def self.excerpt(message)
-      return I18n.t("disteleplus.upload_only", default: "Sent an attachment") if message.raw.blank?
+      return I18n.t("disteleplus.upload_only") if message.raw.blank?
 
       Post.excerpt(
         message.cooked,

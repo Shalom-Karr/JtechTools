@@ -38,6 +38,7 @@ const MAX_UPLOADS = 10;
 // for images.
 export default class DisteleplusConversation extends Component {
   @service disteleplus;
+  @service appEvents;
   @service dialog;
   @service menu;
   @service emojiStore;
@@ -79,6 +80,7 @@ export default class DisteleplusConversation extends Component {
     document.removeEventListener("click", this.closeContextMenu);
     document.removeEventListener("keydown", this.onDocumentKeydown);
     window.removeEventListener("hashchange", this.onHashChange);
+    this.appEvents.off("disteleplus:jump-to-message", this, this.jumpToId);
     this.disteleplus.setViewing(false);
   }
 
@@ -168,6 +170,10 @@ export default class DisteleplusConversation extends Component {
     return !this.args.inDrawer && !this.site.mobileView;
   }
 
+  get voiceNotesEnabled() {
+    return !!this.siteSettings.disteleplus_voice_notes_enabled;
+  }
+
   // Chat's navbar OpenDrawerButton: leave full page, continue in the drawer.
   @action
   async openInDrawer() {
@@ -191,27 +197,24 @@ export default class DisteleplusConversation extends Component {
     this.unsubscribe = this.disteleplus.onNewMessage(this.onNewMessage);
     document.addEventListener("click", this.closeContextMenu);
     document.addEventListener("keydown", this.onDocumentKeydown);
+    // A notification clicked while the conversation is already open only
+    // changes the hash / fires the jump event — no remount happens.
     window.addEventListener("hashchange", this.onHashChange);
+    this.appEvents.on("disteleplus:jump-to-message", this, this.jumpToId);
     requestAnimationFrame(() => {
       this.openAtStart();
       this.enhance(element);
     });
   }
 
-  // Deep link (#m123) wins; otherwise land on the unread divider like
-  // Telegram does; otherwise the bottom.
-  openAtStart() {
+  // Deep link (#m123, or one stashed by the route/drawer opener) wins;
+  // otherwise land on the unread divider like Telegram does; otherwise the
+  // bottom.
+  async openAtStart() {
     const match = window.location.hash.match(/^#m(\d+)$/);
-    if (match) {
-      const id = Number(match[1]);
-      const target = this.messageElement(id);
-      if (target) {
-        this.highlight(target);
-        this.showJump = !this.nearBottom;
-        return;
-      }
-      // Linked message is older than the initial window — load around it.
-      this.jumpToId(id).catch(() => this.scrollToBottom());
+    const targetId =
+      this.disteleplus.consumePendingJump() || (match && Number(match[1]));
+    if (targetId && (await this.jumpToId(targetId))) {
       return;
     }
     const divider = this.timeline?.querySelector(
@@ -225,18 +228,45 @@ export default class DisteleplusConversation extends Component {
     this.scrollToBottom();
   }
 
-  // A notification click while the conversation is already open only changes
-  // the hash — no re-render, so follow it by hand.
   @action
   onHashChange() {
     const match = window.location.hash.match(/^#m(\d+)$/);
     if (match) {
-      this.jumpToId(Number(match[1])).catch(popupAjaxError);
+      this.jumpToId(Number(match[1]));
     }
   }
 
+  // Scroll to and highlight a message by id, fetching a window around it
+  // when it isn't in the loaded slice. Resolves true when the message was
+  // found (locally or remotely).
+  @action
+  async jumpToId(id) {
+    // Consume a matching stash so a later mount doesn't replay the jump.
+    if (this.disteleplus.pendingJumpId === id) {
+      this.disteleplus.consumePendingJump();
+    }
+    if (!this.messageElement(id)) {
+      try {
+        await this.disteleplus.loadAround(id);
+      } catch {
+        return false;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      this.enhance(this.timeline);
+    }
+    const target = this.messageElement(id);
+    if (!target) {
+      return false;
+    }
+    this.highlight(target);
+    this.showJump = !this.nearBottom;
+    return true;
+  }
+
   enhance(root) {
-    enhanceWithin(root, { allAudio: true });
+    enhanceWithin(root, {
+      allAudio: !!this.siteSettings.disteleplus_voice_player_all_audio,
+    });
   }
 
   @action
@@ -322,11 +352,7 @@ export default class DisteleplusConversation extends Component {
   @action
   async openResult(result) {
     this.disteleplus.toggleSearch(false);
-    try {
-      await this.jumpToId(result.id);
-    } catch (error) {
-      popupAjaxError(error);
-    }
+    await this.jumpToId(result.id);
   }
 
   autosize(textarea) {
@@ -783,29 +809,9 @@ export default class DisteleplusConversation extends Component {
 
   @action
   jumpTo(message) {
-    const target = this.messageElement(message.id);
-    if (target) {
-      this.highlight(target);
-    } else {
-      // Target outside the loaded window (old reply, deep link) — fetch a
-      // window around it instead of silently doing nothing.
-      this.jumpToId(message.id).catch(popupAjaxError);
-    }
-  }
-
-  // Jump to any message id, loading a window around it when it is not in
-  // the current timeline. Shared by deep links, reply previews and search.
-  async jumpToId(id) {
-    if (!this.messageElement(id)) {
-      await this.disteleplus.loadAround(id);
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      this.enhance(this.timeline);
-    }
-    const target = this.messageElement(id);
-    if (target) {
-      this.highlight(target);
-      this.showJump = true;
-    }
+    // jumpToId loads a window around out-of-view targets (old replies,
+    // deep links) instead of silently doing nothing.
+    this.jumpToId(message.id);
   }
 
   messageElement(id) {
@@ -1021,6 +1027,13 @@ export default class DisteleplusConversation extends Component {
                 {{on "contextmenu" (fn this.openContextMenu message)}}
                 {{on "dblclick" (fn this.doubleTap message)}}
               >
+                {{! Bare #m<id> anchor so /disteleplus#m42 also works through
+                    core's jumpToElement and native browser anchoring. }}
+                <span
+                  id="m{{message.id}}"
+                  class="disteleplus-message__hash-anchor"
+                  aria-hidden="true"
+                ></span>
                 <div class="disteleplus-message__avatar">
                   {{#if message.user}}
                     <a
@@ -1382,15 +1395,17 @@ export default class DisteleplusConversation extends Component {
                 {{on "paste" this.onPaste}}
                 {{didInsert this.setupComposerTextarea}}
               ></textarea>
-              <button
-                class="disteleplus-composer__button"
-                type="button"
-                title={{i18n "disteleplus.voice.button"}}
-                aria-label={{i18n "disteleplus.voice.button"}}
-                {{on "click" this.openVoiceRecorder}}
-              >
-                {{icon "microphone"}}
-              </button>
+              {{#if this.voiceNotesEnabled}}
+                <button
+                  class="disteleplus-composer__button"
+                  type="button"
+                  title={{i18n "disteleplus.voice.button"}}
+                  aria-label={{i18n "disteleplus.voice.button"}}
+                  {{on "click" this.openVoiceRecorder}}
+                >
+                  {{icon "microphone"}}
+                </button>
+              {{/if}}
               <button
                 class="disteleplus-composer__button"
                 type="button"
