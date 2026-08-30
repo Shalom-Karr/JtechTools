@@ -63,6 +63,10 @@ export default class DisteleplusService extends Service {
   @tracked detached = false;
   // [{ user_id, username, name, until }]
   @tracked typers = [];
+  // user_id → { username, name, avatar_template, last_read_message_id }.
+  // Powers the "Seen by" chip; replaced wholesale so getters recompute.
+  @tracked readStates = {};
+  @tracked readReceiptsEnabled = false;
   store = new KeyValueStore(STORE_NAMESPACE);
 
   // True while the timeline shows a window around a searched message rather
@@ -79,6 +83,20 @@ export default class DisteleplusService extends Service {
   listeners = new Set();
 
   onRealtime = (payload) => {
+    if (payload?.type === "read" && payload.user_id) {
+      if (payload.user_id !== this.currentUser?.id) {
+        this.readStates = {
+          ...this.readStates,
+          [payload.user_id]: {
+            username: payload.username,
+            name: payload.name,
+            avatar_template: payload.avatar_template,
+            last_read_message_id: payload.last_read_message_id,
+          },
+        };
+      }
+      return;
+    }
     if (!payload?.message) {
       return;
     }
@@ -252,8 +270,12 @@ export default class DisteleplusService extends Service {
         this.latestMessageId = response.meta.latest_message_id;
         this.lastReadMessageId = response.meta.last_read_message_id;
         this.openedAtReadId = this.lastReadMessageId;
+        this.readReceiptsEnabled = !!response.meta.read_receipts_enabled;
         this.loaded = true;
         this.subscribe();
+        if (this.readReceiptsEnabled) {
+          this.loadReadStates();
+        }
         return this.messages;
       })
       .catch((error) => {
@@ -380,6 +402,28 @@ export default class DisteleplusService extends Service {
     }
     this.lastTypingSentAt = now;
     ajax(`${BASE}/typing`, { type: "POST" }).catch(() => {});
+  }
+
+  // ── read receipts ─────────────────────────────────────────────────────────
+
+  async loadReadStates() {
+    try {
+      const response = await ajax(`${BASE}/read-states`);
+      const map = {};
+      (response.read_states || []).forEach((state) => {
+        map[state.user_id] = state;
+      });
+      this.readStates = map;
+    } catch {
+      // Receipts are decoration — the conversation works without them.
+    }
+  }
+
+  // Everyone (other than self) whose read cursor has passed `messageId`.
+  seenBy(messageId) {
+    return Object.values(this.readStates).filter(
+      (state) => state.last_read_message_id >= messageId
+    );
   }
 
   // ── search / jump ─────────────────────────────────────────────────────────

@@ -602,6 +602,10 @@ en:
     disteleplus_typing_to_telegram: Show a "typing…" status in the Telegram
       group while a Discourse member is typing. Telegram never sends typing
       events to bots, so the reverse direction is not possible.
+    disteleplus_read_receipts_enabled: Show read receipts on your own messages
+      in the conversation — a double check plus "Seen by N" once other members'
+      read cursors pass the message. Telegram exposes no read data to bots, so
+      the count reflects forum-side readers only.
     disteleplus_bridge_uploads: Copy photos, documents, video and audio across
       the bridge, in both directions, up to the size limit below. When off,
       media is replaced by a short placeholder line.
@@ -747,7 +751,7 @@ en:
 
     disteleplus_forum_post_notifications_enabled: Post a summary of new forum
       posts into the bridged Telegram conversation (and the native
-      conversation), the way the chat-integration plugin does. Private
+      conversation), the way the chat-integration plugin does. Personal
       messages, whispers, hidden posts and read-restricted categories are
       never sent.
     disteleplus_forum_post_categories: Only announce posts in these categories

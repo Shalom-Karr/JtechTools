@@ -877,6 +877,44 @@ export default class DisteleplusConversation extends Component {
     return names.length ? `:${reaction.emoji}: — ${names.join(", ")}` : "";
   }
 
+  // ── read receipts ─────────────────────────────────────────────────────────
+  // Telegram-style: the chip lives on the current user's latest message
+  // only — once a reader's cursor passes it, everything above is seen by
+  // definition.
+
+  get receiptMessageId() {
+    if (!this.disteleplus.readReceiptsEnabled) {
+      return null;
+    }
+    const messages = this.disteleplus.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].mine && !messages[i].deleted) {
+        return messages[i].id;
+      }
+    }
+    return null;
+  }
+
+  get receiptSeenBy() {
+    const id = this.receiptMessageId;
+    return id ? this.disteleplus.seenBy(id) : [];
+  }
+
+  get receiptAvatars() {
+    return this.receiptSeenBy.slice(0, 8).map((state) => ({
+      username: state.username,
+      title: state.name || state.username,
+      url: this.avatarUrl(state.avatar_template),
+    }));
+  }
+
+  get receiptTitle() {
+    const names = this.receiptSeenBy.map(
+      (state) => state.name || state.username
+    );
+    return names.join(", ");
+  }
+
   <template>
     <section
       class="disteleplus-page
@@ -1123,6 +1161,35 @@ export default class DisteleplusConversation extends Component {
                           <span>{{reaction.count}}</span>
                         </button>
                       {{/each}}
+                    </div>
+                  {{/if}}
+
+                  {{#if (eq message.id this.receiptMessageId)}}
+                    <div
+                      class="disteleplus-message__receipt
+                        {{if this.receiptSeenBy.length 'is-seen'}}"
+                      title={{this.receiptTitle}}
+                    >
+                      {{#if this.receiptSeenBy.length}}
+                        {{icon "check-double"}}
+                        <span class="disteleplus-message__receipt-label">
+                          {{i18n
+                            "disteleplus.seen_by"
+                            count=this.receiptSeenBy.length
+                          }}
+                        </span>
+                        <span class="disteleplus-message__receipt-avatars">
+                          {{#each this.receiptAvatars as |reader|}}
+                            <img
+                              src={{reader.url}}
+                              alt={{reader.username}}
+                              title={{reader.title}}
+                            />
+                          {{/each}}
+                        </span>
+                      {{else}}
+                        {{icon "check"}}
+                      {{/if}}
                     </div>
                   {{/if}}
                 </div>
