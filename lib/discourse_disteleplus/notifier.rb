@@ -15,6 +15,7 @@ module DiscourseDisteleplus
       bot_id = DiscourseDisteleplus.bot_user&.id
       recipients =
         Access.allowed_users.where(id: mentioned_ids).where.not(id: [actor&.id, bot_id].compact)
+      preview = excerpt(message)
       recipients.find_each do |recipient|
         notification =
           Notification.create!(
@@ -23,11 +24,19 @@ module DiscourseDisteleplus
             post_number: message.id,
             high_priority: true,
             data: {
-              message: I18n.t("disteleplus.notification", username: display_name(message)),
+              message:
+                I18n.t(
+                  "disteleplus.notification_with_preview",
+                  username: display_name(message),
+                  excerpt: preview,
+                ),
               title: I18n.t("disteleplus.title"),
-              url: PATH,
+              # Deep link: the conversation scrolls to and highlights #m<id>.
+              url: "#{PATH}#m#{message.id}",
               username: actor&.username,
               display_username: actor&.username,
+              avatar_template: actor&.avatar_template,
+              excerpt: preview,
               disteleplus_message_id: message.id,
               disteleplus: true,
             }.to_json,
@@ -80,7 +89,7 @@ module DiscourseDisteleplus
           topic_title: I18n.t("disteleplus.title"),
           excerpt: excerpt(message),
           username: display_name(message),
-          post_url: PATH,
+          post_url: "#{PATH}#m#{message.id}",
         },
       )
     rescue StandardError => e

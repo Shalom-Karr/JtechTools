@@ -2,6 +2,7 @@ en:
   disteleplus:
     title: Disteleplus
     notification: "%{username} mentioned you in Disteleplus"
+    notification_with_preview: "%{username} mentioned you: %{excerpt}"
     upload_only: Sent an attachment
     test_message: "✅ <b>%{site}</b> can reach this group. The conversation is at %{url}"
     telegram_error_hints:
