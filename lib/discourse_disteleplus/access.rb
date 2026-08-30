@@ -16,8 +16,12 @@ module DiscourseDisteleplus
       (user.group_ids & allowed_group_ids).any?
     end
 
+    # Admins always moderate; other staff only when the operator has put the
+    # staff group into disteleplus_allowed_groups. A moderator being inside a
+    # broad group like trust_level_1 must not grant moderation.
     def self.moderator?(user)
-      allowed?(user) && user.staff?
+      return false unless user&.staff? && allowed?(user)
+      user.admin? || allowed_group_ids.include?(Group::AUTO_GROUPS[:staff])
     end
 
     def self.allowed_users
@@ -27,7 +31,7 @@ module DiscourseDisteleplus
         .activated
         .not_suspended
         .not_silenced
-        .not_staged
+        .where(staged: false)
         .where("users.admin OR users.id IN (?)", group_user_ids)
         .distinct
     end

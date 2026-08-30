@@ -40,6 +40,9 @@ module DiscourseDisteleplus
     end
 
     def self.excerpt(post)
+      # 0 means "no excerpt" — Post#excerpt treats 0 as "use the default
+      # length" and would leak body content into the summary.
+      return "" if SiteSetting.disteleplus_forum_post_excerpt_length.to_i <= 0
       post.excerpt(
         SiteSetting.disteleplus_forum_post_excerpt_length,
         text_entities: true,

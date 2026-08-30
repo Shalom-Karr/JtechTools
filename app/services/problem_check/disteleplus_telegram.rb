@@ -6,10 +6,12 @@ class ProblemCheck::DisteleplusTelegram < ProblemCheck
   self.priority = "low"
 
   def call
-    return no_problem unless SiteSetting.disteleplus_enabled
+    # Explicit [] — core's no_problem returns nil on current Discourse, which
+    # breaks callers expecting an enumerable of problems.
+    return [] unless SiteSetting.disteleplus_enabled
 
     error = DiscourseDisteleplus::Health.last_error
-    return no_problem if error.nil?
+    return [] if error.nil?
 
     problem(
       override_key: "dashboard.problem.disteleplus_telegram",

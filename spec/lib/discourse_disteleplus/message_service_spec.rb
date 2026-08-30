@@ -45,9 +45,9 @@ RSpec.describe DiscourseDisteleplus::MessageService do
         "message_id" => @message.id,
       )
 
-      recipients =
-        Notification.where(notification_type: Notification.types[:custom]).pluck(:user_id)
-      expect(recipients).to contain_exactly(admin.id, other.id)
+      # Notifications are @mention-only by design (the unread badge covers
+      # ordinary messages) — a plain message must not fan out to the bell.
+      expect(Notification.where(notification_type: Notification.types[:custom]).count).to eq(0)
     end
 
     it "refuses actors outside the allowed groups" do
@@ -225,11 +225,15 @@ RSpec.describe DiscourseDisteleplus::MessageService do
       expect { service.create!(raw: "no mention here") }.not_to change {
         Jobs::SendPushNotification.jobs.size
       }
-      expect { service.create!(raw: "push @#{other.username}") }.to change {
+      pushed = nil
+      expect { pushed = service.create!(raw: "push @#{other.username}") }.to change {
         Jobs::SendPushNotification.jobs.size
       }.by(1)
       payload = Jobs::SendPushNotification.jobs.last["args"].first["payload"]
-      expect(payload).to include("post_url" => "/disteleplus", "username" => member.username)
+      expect(payload).to include(
+        "post_url" => "/disteleplus#m#{pushed.id}",
+        "username" => member.username,
+      )
     end
   end
 end

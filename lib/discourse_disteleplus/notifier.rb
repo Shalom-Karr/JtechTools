@@ -54,9 +54,16 @@ module DiscourseDisteleplus
     def self.mentioned_user_ids(message)
       return [] if message.cooked.blank?
 
+      # Bare PrettyText.cook emits <span class="mention"> — the a.mention
+      # anchors only appear after post-processing, which conversation
+      # messages never get. Match both so mentions actually notify.
       doc = Nokogiri::HTML5.fragment(message.cooked)
-      names = doc.css("a.mention").map { |a| a.text.to_s.delete_prefix("@").downcase }
-      group_names = doc.css("a.mention-group").map { |a| a.text.to_s.delete_prefix("@").downcase }
+      names =
+        doc.css("a.mention, span.mention").map { |el| el.text.to_s.delete_prefix("@").downcase }
+      group_names =
+        doc
+          .css("a.mention-group, span.mention-group")
+          .map { |el| el.text.to_s.delete_prefix("@").downcase }
       ids = names.empty? ? [] : User.where(username_lower: names).pluck(:id)
       if group_names.any?
         group_ids = Group.where("LOWER(name) IN (?)", group_names).pluck(:id)
