@@ -44,6 +44,7 @@ import {
   profilePrefsRoute,
 } from "./views/preferences.ts";
 import { profileRoute } from "./views/profile.ts";
+import { electionsRoute } from "./views/elections.ts";
 import { contactsRoute, contactUserRoute } from "./views/reqpm.ts";
 import { reviewRoute } from "./views/review.ts";
 import { searchRoute } from "./views/search.ts";
@@ -77,6 +78,7 @@ route("/review", reviewRoute);
 route("/u/:username", profileRoute);
 route("/contacts", contactsRoute);
 route("/contacts/u/:username", contactUserRoute);
+route("/elections", electionsRoute, { public: true });
 route("/preferences", preferencesRoute, { public: true });
 route("/preferences/profile", profilePrefsRoute);
 route("/preferences/email", emailPrefsRoute);
@@ -148,9 +150,13 @@ function boot(): void {
     if (prefs.live) startBus();
     // Native wrapper app only: keep this device registered for pushes.
     registerPush();
-    // Counters when coming back to the app after a while.
+    // Counters when coming back to the app after a while: not on every
+    // quick switch away and back.
+    let refreshedAt = Date.now();
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) void refreshUser();
+      if (document.hidden || Date.now() - refreshedAt < 60000) return;
+      refreshedAt = Date.now();
+      void refreshUser();
     });
   }
 }

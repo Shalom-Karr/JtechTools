@@ -227,6 +227,7 @@ module DiscourseDumbcourse
         reactions: reactions,
         noReactionCategoryIds: no_reaction_category_ids,
         reqpmCountryCode: setting(:reqpm_default_country_code).to_s,
+        modElectionsEnabled: ::DiscourseModElections.enabled?,
         tagsEnabled: !!SiteSetting.tagging_enabled,
         maxPostLength: SiteSetting.max_post_length,
         minPostLength: SiteSetting.min_post_length,
@@ -263,6 +264,7 @@ module DiscourseDumbcourse
         new_personal_messages_notifications_count: user.new_personal_messages_notifications_count,
         reqpm_available: reqpm[:available],
         reqpm_incoming_count: reqpm[:incoming_count] || 0,
+        mod_election_vote_due: mod_election_vote_due(user),
         can_pair_devices: DiscourseDumbcourse::Pairing.enabled? && !user.is_impersonating,
         second_factor_enabled: user.totp_enabled? || user.security_keys_enabled?,
       }
@@ -271,8 +273,16 @@ module DiscourseDumbcourse
       nil
     end
 
+    # 1 while Vote Week is open and this member can vote but hasn't.
+    def mod_election_vote_due(user)
+      return 0 unless ::DiscourseModElections.enabled?
+      summary = ::DiscourseModElections::Presenter.current_user_summary(user)
+      summary && summary[:voter] && !summary[:voted] ? 1 : 0
+    rescue StandardError
+      0
+    end
+
     def reqpm_summary(user)
-      return { available: false } unless defined?(::DiscourseReqpm::Presenter)
       ::DiscourseReqpm::Presenter.current_user_summary(user)
     rescue StandardError
       { available: false }
@@ -315,7 +325,7 @@ module DiscourseDumbcourse
     end
 
     def no_reaction_category_ids
-      defined?(::DiscourseNoLikes) ? ::DiscourseNoLikes.restricted_category_ids : []
+      ::DiscourseNoLikes.restricted_category_ids
     rescue StandardError
       []
     end
@@ -325,6 +335,13 @@ module DiscourseDumbcourse
     NOTIFICATION_KEYS = %w[
       reqpm.notifications.request
       reqpm.notifications.shared
+      mod_elections.notifications.on_ballot
+      mod_elections.notifications.voting_open
+      mod_elections.notifications.reminder
+      mod_elections.notifications.closed
+      mod_elections.notifications.results
+      mod_elections.notifications.disqualified
+      mod_elections.notifications.seat_filled
       discourse_mod_categories.whisper.whisper_notification
       discourse_mod_categories.note_notification
       discourse_mod_categories.note_reply_notification

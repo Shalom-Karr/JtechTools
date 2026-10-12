@@ -20,6 +20,15 @@ module ::DiscourseModCategories
     KIND_USER_NOTE = "user_note"
     KIND_FLAG_NOTE = "flag_note"
 
+    # A user's notifications from the mod notes feed: topic notes and
+    # replies, and the staff events above.
+    def self.mod_notes_for(user_id)
+      ::Notification.where(
+        user_id: user_id,
+        notification_type: ::Notification.types[:custom],
+      ).where("data LIKE ?", '%"mod_note":true%')
+    end
+
     # `acting_user` is excluded from recipients so the moderator who
     # performed the action does not get their own notification.
     #
@@ -130,7 +139,6 @@ module ::DiscourseModCategories
           topic_title: topic_title,
           target_username: target_username,
         )
-        staff_user.publish_notifications_state
       end
     rescue StandardError => e
       ::Rails.logger.warn(
