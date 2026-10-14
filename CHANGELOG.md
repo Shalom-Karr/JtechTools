@@ -140,6 +140,7 @@ What changed for forums running Jtech Tools. Newest first.
 
 **Fixed**
 
+- Dumbcourse: with Discourse's Unified New switched on, the New tab also listed topics with unread replies, the same as the Unread tab, and Dismiss all new said it worked but dismissed nothing. New lists new topics only again, and Dismiss all new dismisses them.
 - JTech theme: with Who's Online showing who's online on topic lists, a topic card lit up its whole row of faces in green when the last poster was online, so the faces blurred together. Now only the last poster's face gets a thin green ring.
 - JTech theme: a code block taller than about 20 lines no longer shows empty line numbers under its code, and numbers no longer spill out of its box over the text after it. The numbers scroll with the code.
 - JTech theme: on a topic card, the faces of the people in the topic open their user card again, as they did on the topic list before, instead of opening the topic.
