@@ -51,6 +51,41 @@
   outline-offset: 2px;
 }
 
+// Rows of a list that isn't cards (suggested topics under a topic; any list
+// with topic_cards off). Core gives a pressed row nothing, and marks the row
+// you came back to (.selected) with a bar down one side of its first cell.
+// Here a pressed row sinks a little with the pressed tint and springs back,
+// as a card does, and the row you came back to is tinted all across.
+.topic-list:not(.jt-cards) .topic-list-item {
+  -webkit-tap-highlight-color: transparent;
+
+  // let go, it springs back: a little past full size, then settles
+  transition:
+    background-color var(--jt-motion),
+    scale 0.45s cubic-bezier(0.3, 1.8, 0.5, 1);
+
+  // not while a control in the row is pressed (category, tags, a poster)
+  &:active:not(:has(:is(a, button, input, label):not(.raw-topic-link):active)) {
+    scale: 0.985;
+    background: var(--jt-active);
+    transition:
+      background-color var(--jt-motion),
+      scale 0.1s cubic-bezier(0.2, 0, 0, 1);
+
+    @media (prefers-reduced-motion: reduce) {
+      scale: none;
+    }
+  }
+
+  &.selected {
+    background: var(--jt-active);
+
+    td:first-of-type {
+      box-shadow: none;
+    }
+  }
+}
+
 // ── Desktop list controls: filters · tabs · New Topic ──
 // Core wraps the row item by item when it runs out of room, which dropped
 // "New Topic" onto a line of its own. Here the tabs and the buttons always
